@@ -1,6 +1,7 @@
 import datetime
 import json
 from pickletools import read_stringnl
+from venv import create
 import requests
 import xml.etree.ElementTree as ET
 from typing import Dict, List
@@ -9,7 +10,7 @@ import boto3
 from botocore.config import Config
 
 DATABASE_NAME = "energy-mix-database"
-TABLE_NAME = "energy-readings"
+TABLE_NAME = "energy-mix-readings-1"
 
 ENERGY_TYPES = {
     "Nucléaire": "nuclear",
@@ -93,57 +94,76 @@ def write_values(client, reading):
 
     common_attributes = {
         'Dimensions': dimensions,
-        'MeasureValueType': 'BIGINT',
-        'Time': str(reading['time']*1000)
+        'MeasureName': 'energy-mix',
+        'MeasureValueType': 'MULTI'
     }
 
+    records = []
 
-    nuclear = {
-        'MeasureName': 'nuclear',
-        'MeasureValue': f"{reading['nuclear']}"
-    }
-    coal = {
-        'MeasureName': 'coal',
-        'MeasureValue': f"{reading['coal']}"
-    }
-    gas = {
-        'MeasureName': 'gas',
-        'MeasureValue': f"{reading['gas']}"
-    }
-    heavy_oil = {
-        'MeasureName': 'heavy-oil',
-        'MeasureValue': f"{reading['heavy-oil']}"
-    }
-    oil = {
-        'MeasureName': 'oil',
-        'MeasureValue': f"{reading['oil']}"
-    }
-    hydro = {
-        'MeasureName': 'hydro',
-        'MeasureValue': f"{reading['hydro']}"
-    }
-    wind = {
-        'MeasureName': 'wind',
-        'MeasureValue': f"{reading['wind']}"
-    }
-    others = {
-        'MeasureName': 'others',
-        'MeasureValue': f"{reading['others']}"
-    }
-    pumped_storage = {
-        'MeasureName': 'pumped-storage',
-        'MeasureValue': f"{reading['pumped-storage']}"
-    }
-    solar = {
-        'MeasureName': 'solar',
-        'MeasureValue': f"{reading['solar']}"
-    }
-    consumption = {
-        'MeasureName': 'consumption',
-        'MeasureValue': f"{reading['consumption']}"
-    }
+    for r in reading: 
+        record = {
+            'Time': str(reading['time']*1000),
+            'MeasureValues': []
+        }
 
-    records = [nuclear, coal, gas, heavy_oil, oil, hydro, wind, others, pumped_storage, solar, consumption]
+        nuclear = {
+            'Name': 'nuclear',
+            'Value': f"{reading['nuclear']}",
+            'Type': 'BIGINT'
+        }
+        coal = {
+            'Name': 'coal',
+            'Value': f"{reading['coal']}",
+            'Type': 'BIGINT'
+        }
+        gas = {
+            'Name': 'gas',
+            'Value': f"{reading['gas']}",
+            'Type': 'BIGINT'
+        }
+        heavy_oil = {
+            'Name': 'heavy-oil',
+            'Value': f"{reading['heavy-oil']}",
+            'Type': 'BIGINT'
+        }
+        oil = {
+            'Name': 'oil',
+            'Value': f"{reading['oil']}",
+            'Type': 'BIGINT'
+        }
+        hydro = {
+            'Name': 'hydro',
+            'Value': f"{reading['hydro']}",
+            'Type': 'BIGINT'
+        }
+        wind = {
+            'Name': 'wind',
+            'Value': f"{reading['wind']}",
+            'Type': 'BIGINT'
+        }
+        others = {
+            'Name': 'others',
+            'Value': f"{reading['others']}",
+            'Type': 'BIGINT'
+        }
+        pumped_storage = {
+            'Name': 'pumped-storage',
+            'Value': f"{reading['pumped-storage']}",
+            'Type': 'BIGINT'
+        }
+        solar = {
+            'Name': 'solar',
+            'Value': f"{reading['solar']}",
+            'Type': 'BIGINT'
+        }
+        consumption = {
+            'Name': 'consumption',
+            'Value': f"{reading['consumption']}",
+            'Type': 'BIGINT'
+        }
+
+        record['MeasureValues'] = [nuclear, coal, gas, heavy_oil, oil, hydro, wind, others, pumped_storage, solar, consumption]
+        records.append(record)
 
     try:
         result = client.write_records(DatabaseName=DATABASE_NAME, TableName=TABLE_NAME,
@@ -159,6 +179,21 @@ def write_values(client, reading):
     except Exception as err:
         print("Error:", err)
 
+def create_table(client):
+        print("Creating table")
+        retention_properties = {
+            'MemoryStoreRetentionPeriodInHours': 12,
+            'MagneticStoreRetentionPeriodInDays': 10
+        }
+        try:
+            client.create_table(DatabaseName=DATABASE_NAME, TableName=TABLE_NAME,
+                                     RetentionProperties=retention_properties)
+            print("Table [%s] successfully created." % TABLE_NAME)
+        except client.exceptions.ConflictException:
+            print("Table [%s] exists on database [%s]. Skipping table creation" % (
+                TABLE_NAME, DATABASE_NAME))
+        except Exception as err:
+            print("Create table failed:", err)
 
 def lambda_handler(event, context):
     xml = requests.get(
@@ -170,8 +205,10 @@ def lambda_handler(event, context):
     clientWrite = session.client('timestream-write', config=Config(read_timeout=20, max_pool_connections=5000,
                                                               retries={'max_attempts': 10}))
 
-    for reading in p:
-        write_values(clientWrite, reading)
+    create_table(clientWrite)
+
+    
+    write_values(clientWrite, p)
 
     return {
         'statusCode': 200,
