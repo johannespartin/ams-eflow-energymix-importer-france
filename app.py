@@ -9,8 +9,8 @@ import time
 import boto3
 from botocore.config import Config
 
-DATABASE_NAME = "energy-mix-database"
-TABLE_NAME = "energy-mix-readings-1"
+DATABASE_NAME = "ams-eflow-energymix-db"
+TABLE_NAME = "aws-eflow-energymix-table"
 
 ENERGY_TYPES = {
     "Nucléaire": "nuclear",
@@ -85,85 +85,83 @@ def get_url_for_day(day: datetime.date) -> str:
     return f"https://eco2mix.rte-france.com/curves/eco2mixWeb?type=mix&dateDeb={day.strftime('%d/%m/%Y')}&dateFin={day.strftime('%d/%m/%Y')}&mode=NORM"
 
 
-def write_values(client, reading):
-    print(f"Writing values {reading}")
+def write_values(client, r):
+    records = []
 
     dimensions = [
         {'Name': 'Country', 'Value': 'FR'}
     ]
 
     common_attributes = {
+        
+    }
+
+    record = {
+        'Time': str(r['time']*1000),
+        'MeasureValues': [], 
         'Dimensions': dimensions,
         'MeasureName': 'energy-mix',
         'MeasureValueType': 'MULTI'
     }
 
-    records = []
+    nuclear = {
+        'Name': 'nuclear',
+        'Value': f"{r['nuclear']}",
+        'Type': 'BIGINT'
+    }
+    coal = {
+        'Name': 'coal',
+        'Value': f"{r['coal']}",
+        'Type': 'BIGINT'
+    }
+    gas = {
+        'Name': 'gas',
+        'Value': f"{r['gas']}",
+        'Type': 'BIGINT'
+    }
+    heavy_oil = {
+        'Name': 'heavy-oil',
+        'Value': f"{r['heavy-oil']}",
+        'Type': 'BIGINT'
+    }
+    oil = {
+        'Name': 'oil',
+        'Value': f"{r['oil']}",
+        'Type': 'BIGINT'
+    }
+    hydro = {
+        'Name': 'hydro',
+        'Value': f"{r['hydro']}",
+        'Type': 'BIGINT'
+    }
+    wind = {
+        'Name': 'wind',
+        'Value': f"{r['wind']}",
+        'Type': 'BIGINT'
+    }
+    others = {
+        'Name': 'others',
+        'Value': f"{r['others']}",
+        'Type': 'BIGINT'
+    }
+    pumped_storage = {
+        'Name': 'pumped-storage',
+        'Value': f"{r['pumped-storage']}",
+        'Type': 'BIGINT'
+    }
+    solar = {
+        'Name': 'solar',
+        'Value': f"{r['solar']}",
+        'Type': 'BIGINT'
+    }
+    consumption = {
+        'Name': 'consumption',
+        'Value': f"{r['consumption']}",
+        'Type': 'BIGINT'
+    }
 
-    for r in reading: 
-        record = {
-            'Time': str(reading['time']*1000),
-            'MeasureValues': []
-        }
-
-        nuclear = {
-            'Name': 'nuclear',
-            'Value': f"{reading['nuclear']}",
-            'Type': 'BIGINT'
-        }
-        coal = {
-            'Name': 'coal',
-            'Value': f"{reading['coal']}",
-            'Type': 'BIGINT'
-        }
-        gas = {
-            'Name': 'gas',
-            'Value': f"{reading['gas']}",
-            'Type': 'BIGINT'
-        }
-        heavy_oil = {
-            'Name': 'heavy-oil',
-            'Value': f"{reading['heavy-oil']}",
-            'Type': 'BIGINT'
-        }
-        oil = {
-            'Name': 'oil',
-            'Value': f"{reading['oil']}",
-            'Type': 'BIGINT'
-        }
-        hydro = {
-            'Name': 'hydro',
-            'Value': f"{reading['hydro']}",
-            'Type': 'BIGINT'
-        }
-        wind = {
-            'Name': 'wind',
-            'Value': f"{reading['wind']}",
-            'Type': 'BIGINT'
-        }
-        others = {
-            'Name': 'others',
-            'Value': f"{reading['others']}",
-            'Type': 'BIGINT'
-        }
-        pumped_storage = {
-            'Name': 'pumped-storage',
-            'Value': f"{reading['pumped-storage']}",
-            'Type': 'BIGINT'
-        }
-        solar = {
-            'Name': 'solar',
-            'Value': f"{reading['solar']}",
-            'Type': 'BIGINT'
-        }
-        consumption = {
-            'Name': 'consumption',
-            'Value': f"{reading['consumption']}",
-            'Type': 'BIGINT'
-        }
-
-        record['MeasureValues'] = [nuclear, coal, gas, heavy_oil, oil, hydro, wind, others, pumped_storage, solar, consumption]
-        records.append(record)
+    record['MeasureValues'] = [nuclear, coal, gas, heavy_oil, oil, hydro, wind, others, pumped_storage, solar, consumption]
+    records.append(record)
 
     try:
         result = client.write_records(DatabaseName=DATABASE_NAME, TableName=TABLE_NAME,
@@ -199,16 +197,12 @@ def lambda_handler(event, context):
     xml = requests.get(
         f"https://eco2mix.rte-france.com/curves/eco2mixWeb?type=mix&dateDeb={event['startDate']}&dateFin={event['endDate']}&mode=NORM").text
     p = parse_xml(xml)
-    print(p)
 
     session = boto3.Session()
     clientWrite = session.client('timestream-write', config=Config(read_timeout=20, max_pool_connections=5000,
                                                               retries={'max_attempts': 10}))
-
-    create_table(clientWrite)
-
-    
-    write_values(clientWrite, p)
+    for r in p: 
+        write_values(clientWrite, r)
 
     return {
         'statusCode': 200,
